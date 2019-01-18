@@ -65,7 +65,6 @@ In combination with some of the figures captured in this matrix we can start to 
 |10|	4|	1818| 	66%|	1330|
 |10|	6|	2834| 	60%|	2010|
 |16|	6|	3147|	94%|	2257|
-||||||
 `Figure 03: Single App Instance Test Data`
 
 Drawing from Figures 02 and 03, I can arrive at a couple of key assertions.
@@ -88,7 +87,6 @@ In Figure 04 the longer test runs can be seen.  The No Autoscale run shows the C
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 16 |	6|	<font color="red">21001</font> |	100% | 2270 |<font color="red"> None</font> |
 | 16 |	6|	<font color="green">3484</font>  | 100% | 1160 |<font color="green"> 3 </font>   |
-||||||
 `Figure 06: Metrics With and Without Autoscale`
 
 In the run that is pushing the server without Autoscale enabled we see the response times drive up to 21s and the throughput top out around 150 requests.  Once I turn on the Autoscale and re-run the test we see the max throughput nearly double during the duration of the test and the max request time drop back down to about 3.5 seconds.  The delta between the max time and the min time for the requests is likely a combination of the response time as the initial instance plateaus while the other instances are brought online and just the amount of load that is being pushed.  I imagine if I ran this for much longer the average would start to approach the minimum.
