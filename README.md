@@ -1,134 +1,98 @@
-![Logo of the project](https://raw.githubusercontent.com/jehna/readme-best-practices/master/sample-logo.png)
+![spaceman](https://raw.githubusercontent.com/jofultz/AppServiceContainerOptimization/master/images/spaceman-logo-114x114.png)
 
-# Name of the project
-> Additional information or tagline
+# Scaling Python Apps on App Service for Linux Containers 
+> Sorting Through the Layer Interactions
 
-A brief description of your project, what it is used for and how does life get
-awesome when someone starts to use it.
+With the introduction of Linux and Containers to the App Service capabilities the world of PaaS container hosting gets a little more palatable for those that are looking to modernize the application deployment footprints, but do not want to take on learning all of the intricacies of a running a full environment using something like Kubernetes.  With containers on App Service we can reap the benefits of containerized deployments in addition to the benefits of the high-fidelity service integration that App Service has across the Azure services such as Azure Active Directory, Azure Container Registry, App Insights, and so on.
+ 
+However, with a new system comes new things to understand in order to get the most out of the system.  In this writing I will focus on key considerations for scaling when hosting a containerized Python application using App Service.  This is a key consideration as we move from the IIS + FastCGI world into the Linux + NGINX + uWSGI world in App Service.  
 
-## Installing / Getting started
+## Background
 
-A quick introduction of the minimal setup you need to get a hello world up &
-running.
+I want to cover a little background on the tools used and the structure of the application.  For those familiar with FastCGI, but not with uWSGI it is easiest to think of it as a superset replacement for the CGI capabilities provided by FastCGI.  uWSGI can be used as a stand-alone server and to that end is a little more like IIS + FastCGI.  In practice, uWSGI is commonly used with something like NGINX which serves as the front-line middleware server handling the web traffic and passing the requests back to uWSGI based on configuration.  
+ 
+The container I'm using will be running NGINX + uWSGI + Python for each instance running in App Service.  In Kubernetes, a single node may run one or more pods each running one or more containers.  In App Service a node, or instance in App Service terms, will host only a single running container.  Thus, the App Service container topology that I'm using will look more like that depicted in Figure 01 below.
 
-```shell
-packagemanager install awesome-project
-awesome-project start
-awesome-project "Do something!"  # prints "Nah."
-```
+![topology](https://raw.githubusercontent.com/jofultz/AppServiceContainerOptimization/master/images/AppServiceContainerTopology.png)
+`Figure 01: App Service + Container Topology`
 
-Here you should say what actually happens when you execute the code above.
+As illustrated in Figure 01, each container hosts an NIGINX and an uWSGI process in addition to a configurable number of Python worker processes.  My default setup will spawn no more than 2 Python worker processes.  As one might imagine, this can leave me in a bit of a lurch when it comes to scaling my deployment.  Depending on the rules I've setup for Autoscale and the execution profile of my application I may not be able to drive the metrics high enough to trigger the Autoscale action for App Service.  Thus, I'm pinned at 1 instance + 2 workers in perpetuity.  There's no magic here as I must put the effort into understanding the behavior of my app as it scales in order to determine which levers to adjust to get the infrastructure to behave as I desire.  What is decidedly different are the levers.  Instead of just VMs or even containers, we have a matrix of instance size, container, and worker processes.  For example, some options are:
+1.	run multiple uWSGI processes and have the NGINX workers balance across the uWSGI instances
+2.	Ensure that my Python codebase is thread safe and use threads in uWSGI which in turn creates a new ThreadState for the existing interpreter
+3.	Spawn multiple single threaded Python workers
+ 
+This is the grey area in which experience and opinion have heavy sway on the direction one takes.  In my setup, uWSGI's job is to primarily to broker requests to Python workers.  Thus, my inclination is to rule out #1 as it adds a lot of overhead to scale out the processes doing the work.  Using threads is a more common practice, but my inclination is that using ThreadState in Python apps serving web applications increases the difficulty of debugging.  I'd rather avoid the being lead on a roundabout chase to pin down and resolve threading issues and GIL contention.  Moreover, as a design I fear it will lead to leaky practices for sharing state information.  My preference is more of shared-nothing model from the application code perspective.  Of course, the application will have a shared infrastructure and compute footprint, but I'd rather not have the code dependent on an in-process shared memory state that I must protect and synchronize in my code.  If I had a memory heavy caching application I might reconsider, but I'm targeting low to mid-level memory usage and mostly CPU constrained execution.
 
-### Initial Configuration
+## Test Harness
 
-Some projects require initial configuration (e.g. access tokens or keys, `npm i`).
-This is the section where you would document those requirements.
-
-## Developing
-
-Here's a brief intro about what a developer must do in order to start developing
-the project further:
-
-```shell
-git clone https://github.com/your/awesome-project.git
-cd awesome-project/
-packagemanager install
-```
-
-And state what happens step-by-step.
-
-### Building
-
-If your project needs some additional steps for the developer to build the
-project after some code changes, state them here:
+The test driver is pretty simple in that I convert an array of numbers to strings, hash the string value of each, and then sort the array.  It is meant to take time and drive some amount of CPU usage.  For each execution of the test it will generate an array of 10,000 numbers on which it will perform the previously described operations.  I've created a route that will execute the test driver and do it for n times based on the value of loopCount which is passed as a query parameter.  If no parameter is found then the default value of 10 is used.  This is the URL that I will use to execute the test: https://py-simple-docker.azurewebsites.net/helloworld/?loopCount=20.  As can be seen, I'm loop 20 times for each execution.
+ 
+To run the test and drive concurrency, I'm using Apache Bench (ab) (https://httpd.apache.org/docs/2.4/programs/ab.html).  I performed the test from my Windows 10 laptop using the Windows Subsystem for Linux.  It was easy to install and run straight from there.  Using  ab makes it simple to run the same tests from various machines whether Windows, Mac, or Linux machines so it is good choice for flexibility and personal use.  For all of my runs I'm using the following command with the only variance being concurrency:
 
 ```shell
-./configure
-make
-make install
+ab -c [2, 4, 6] -n 200 https://[app name].azurewebsites.net/helloworld/?loopCount=20
 ```
 
-Here again you should state what actually happens when the code above gets
-executed.
+In the final two runs I use 1000 for the number of requests so that I may demonstrate Autoscale taking effect in App Service.
 
-### Deploying / Publishing
+## Observations from Testing
 
-In case there's some step you have to take that publishes this project to a
-server, this is the right time to state it.
+For each run, I'm changing the uWSGI cheaper (https://uwsgi-docs.readthedocs.io/en/latest/Cheaper.html) settings in the uwsgi.ini file.  The cheaper subsystem controls the number and manner in which Python workers are spawned and killed.  My final configuration looks like the following:
+```ini
+[uwsgi]
+module=main
+callable=app
+buffer-size=16384
+workers = 16 # maximum number of workers
+cheaper-algo = spare
+cheaper = 2 # tries to keep 8 idle workers
+cheaper-initial = 2 # starts with minimal workers
+cheaper-step = 2 # spawn at most 2 workers at once
+cheaper-idle = 300 # cheap one worker per 5 minutes while idle
 
-```shell
-packagemanager deploy awesome-project -s server.com -u username -p password
 ```
+My initial test was with a static 2 workers, but the remainder of the tests I added cheaper settings to spawn workers based on my settings.
 
-And again you'd need to tell what the previous code actually does.
+![singleinstancetests](https://raw.githubusercontent.com/jofultz/AppServiceContainerOptimization/master/images/SingleAppTestIncreasingWorkerCount.png)
+`Figure 02: Single App Instance Tests with Increasing Worker Count`
 
-## Features
+In combination with some of the figures captured in this matrix we can start to draw a little understanding of how the application behaves.
 
-What's all the bells and whistles this project can perform?
-* What's the main functionality
-* You can also do another thing
-* If you get really randy, you can even do this
+|Worker Max|Concurrent Users|Max Req Time(ms)|Max CPU %|Min Req Time(ms)|
+| :--- | :--- | :--- | :--- | :--- |
+|2|	2|	1983|	49%|	1428|
+|2|	4|	16469| 	47%|1887|
+|10|	4|	1818| 	66%|	1330|
+|10|	6|	2834| 	60%|	2010|
+|16|	6|	3147|	94%|	2257|
+||||||
+`Figure 03: Single App Instance Test Data`
 
-## Configuration
+Drawing from Figures 02 and 03, I can arrive at a couple of key assertions.
+ 
+1.	CPU utilization plateaus based on the number of workers.  This means that for many of these test runs the infrastructure would not meet the Autoscale criteria for greater than 70% CPU utilization.
+ 
+2.	Increasing concurrency while holding the worker count steady means increasing request time as concurrent calls are serialized one behind the other and those beyond the worker process count must wait for a free process in order to be serviced.
+ 
+The good news is that once I drive my workers to 16 the App Service instance is well over my 70% threshold for CPU utilization.  All that's left now is to run it for a longer duration to see what that looks like for performance and then turn on autoscaling and rerun the same test.  
 
-Here you should write what are all of the configurations a user can enter when
-using the project.
+![AutoscaleTest](https://raw.githubusercontent.com/jofultz/AppServiceContainerOptimization/master/images/LongerTestRunsWithAndWithoutAutoscale.png)
+`Figure 04: Longer Test Runs With and Without Autoscale`
 
-#### Argument 1
-Type: `String`  
-Default: `'default value'`
+In Figure 04 the longer test runs can be seen.  The No Autoscale run shows the CPU hitting 100% and maintaining that for the duration of the test.  In the subsequent run what we see is the initial CPU hitting 100% and then App Service adding a couple of instances and the CPU lowering as the request load is spread across the instances.  Additionally, the duration is visually shorter.  In fact, the first run took 380 seconds while the second run for the same number of requests took 245 seconds.  It follows that we should see shorter requests response times and more throughput.
 
-State what an argument does and how you can use it. If needed, you can provide
-an example below.
+![Thoughput](https://raw.githubusercontent.com/jofultz/AppServiceContainerOptimization/master/images/ThroughputWithAndWithoutAutoscale.png)
+`Figure 05: Throughput With and Without Autoscale`
 
-Example:
-```bash
-awesome-project "Some other value"  # Prints "You're nailing this readme!"
-```
+|Worker Max|Concurrent Users|Max Req Time(ms)|Max CPU %|Min Req Time(ms)| Autoscale |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 16 |	6|	<font color="red">21001</font> |	100% | 2270 |<font color="red"> None</font> |
+| 16 |	6|	<font color="green">3484</font>  | 100% | 1160 |<font color="green"> 3 </font>   |
+||||||
+`Figure 06: Metrics With and Without Autoscale`
 
-#### Argument 2
-Type: `Number|Boolean`  
-Default: 100
+In the run that is pushing the server without Autoscale enabled we see the response times drive up to 21s and the throughput top out around 150 requests.  Once I turn on the Autoscale and re-run the test we see the max throughput nearly double during the duration of the test and the max request time drop back down to about 3.5 seconds.  The delta between the max time and the min time for the requests is likely a combination of the response time as the initial instance plateaus while the other instances are brought online and just the amount of load that is being pushed.  I imagine if I ran this for much longer the average would start to approach the minimum.
 
-Copy-paste as many of these as you need.
+## Summary
 
-## Contributing
-
-When you publish something open source, one of the greatest motivations is that
-anyone can just jump in and start contributing to your project.
-
-These paragraphs are meant to welcome those kind souls to feel that they are
-needed. You should state something like:
-
-"If you'd like to contribute, please fork the repository and use a feature
-branch. Pull requests are warmly welcome."
-
-If there's anything else the developer needs to know (e.g. the code style
-guide), you should link it here. If there's a lot of things to take into
-consideration, it is common to separate this section to its own file called
-`CONTRIBUTING.md` (or similar). If so, you should say that it exists here.
-
-## Links
-
-Even though this information can be found inside the project on machine-readable
-format like in a .json file, it's good to include a summary of most useful
-links to humans using your project. You can include links like:
-
-- Project homepage: https://your.github.com/awesome-project/
-- Repository: https://github.com/your/awesome-project/
-- Issue tracker: https://github.com/your/awesome-project/issues
-  - In case of sensitive bugs like security vulnerabilities, please contact
-    my@email.com directly instead of using issue tracker. We value your effort
-    to improve the security and privacy of this project!
-- Related projects:
-  - Your other project: https://github.com/your/other-project/
-  - Someone else's project: https://github.com/someones/awesome-project/
-
-
-## Licensing
-
-One really important part: Give your project a proper license. Here you should
-state what the license is and how to find the text version of the license.
-Something like:
-
-"The code in this project is licensed under MIT license."
+While there is nothing new here in that more processes and more CPUs make for higher scale there is a bit of an inception obfuscation to clear-up.  How do we scale?  Is it App Service?  Is it NGINX and uWSGI?  Is it Python workers?  Is it some combination of the afore mentioned?  To answer these questions, we have to tease apart the various components that have to scale and understand how they impact each other.  For this example of a containerized Python application using uWSGI and running on App Service I've tried to illustrate how to configure the scale settings for the worker processes that in turn affect the scalability settings in App Service.  
