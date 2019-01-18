@@ -65,7 +65,6 @@ In combination with some of the figures captured in this matrix we can start to 
 |10|	4|	1818| 	66%|	1330|
 |10|	6|	2834| 	60%|	2010|
 |16|	6|	3147|	94%|	2257|
-||||||
 
 `Figure 03: Single App Instance Test Data`
 
@@ -89,7 +88,6 @@ In Figure 04 the longer test runs can be seen.  The No Autoscale run shows the C
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 16 |	6|	<font color="red">21001</font> |	100% | 2270 |<font color="red"> None</font> |
 | 16 |	6|	<font color="green">3484</font>  | 100% | 1160 |<font color="green"> 3 </font>   |
-||||||
 
 `Figure 06: Metrics With and Without Autoscale`
 
