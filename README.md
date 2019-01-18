@@ -3,9 +3,9 @@
 # Scaling Python Apps on App Service for Linux Containers 
 > Sorting Through the Layer Interactions
 
-With the introduction of Linux and Containers to the App Service capabilities the world of PaaS container hosting gets a little more palatable for those that are looking to modernize the application deployment footprints, but do not want to take on learning all of the intricacies of a running a full environment using something like Kubernetes.  With containers on App Service we can reap the benefits of containerized deployments in addition to the benefits of the high-fidelity service integration that App Service has across the Azure services such as Azure Active Directory, Azure Container Registry, App Insights, and so on.
+With the introduction of Linux and Containers to the App Service capabilities, the world of PaaS container hosting gets a little more palatable for those that are looking to modernize the application deployment footprints, but do not want to take on learning all of the intricacies of a running a full environment using something like Kubernetes.  With containers on App Service we can reap the benefits of containerized deployments in addition to the benefits of the high-fidelity service integration that App Service has across the Azure services such as Azure Active Directory, Azure Container Registry, App Insights, and so on.
  
-However, with a new system comes new things to understand in order to get the most out of the system.  In this writing I will focus on key considerations for scaling when hosting a containerized Python application using App Service.  This is a key consideration as we move from the IIS + FastCGI world into the Linux + NGINX + uWSGI world in App Service.  
+However, with a new system comes new things to understand in order to get the most out of the system.  In this writing, I will focus on key considerations for scaling when hosting a containerized Python application using App Service.  This is a key consideration as we move from the IIS + FastCGI world into the Linux + NGINX + uWSGI world in App Service.  
 
 ## Background
 
