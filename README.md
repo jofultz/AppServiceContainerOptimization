@@ -95,4 +95,12 @@ In the run that is pushing the server without Autoscale enabled we see the respo
 
 ## Summary
 
-While there is nothing new here in that more processes and more CPUs make for higher scale there is a bit of an inception obfuscation to clear-up.  How do we scale?  Is it App Service?  Is it NGINX and uWSGI?  Is it Python workers?  Is it some combination of the afore mentioned?  To answer these questions, we have to tease apart the various components that have to scale and understand how they impact each other.  For this example of a containerized Python application using uWSGI and running on App Service I've tried to illustrate how to configure the scale settings for the worker processes that in turn affect the scalability settings in App Service.  
+There is nothing new here.  More processes and more CPUs make for handle more load and drive higher resource utilization.  However, there is a bit of an inception obfuscation to clear-up.  In order to answer questions such as:
+* How do we scale?
+* How can we ensure App Service autoscales as expected?
+* Should we add it NGINX and uWSGI workers? 
+* How many Python workers are needed to drive the instance?
+
+Most likely it is a combination of some or all of the elements indicated in the questions.  To be prescriptive in the deployment configuration we have to tease apart the various components that drive load and must scale and come to an understanding of how they impact each other.  For this example of a containerized Python application using uWSGI and running on App Service I've tried to illustrate how to configure the scale settings for the worker processes that in turn affect the scalability settings in App Service.  
+
+Lastly, the Dockerfile, uWSGI config, and the Python driver I used for this may all be found in this repo.
