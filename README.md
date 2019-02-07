@@ -95,7 +95,7 @@ In the run that is pushing the server without Autoscale enabled we see the respo
 
 ## Summary
 
-There is nothing new here.  More processes and more CPUs make for handle more load and drive higher resource utilization.  However, there is a bit of an inception obfuscation to clear-up.  In order to answer questions such as:
+There is nothing new here.  More processes and more CPUs handle more load and drive higher resource utilization.  However, there is a bit of an inception obfuscation to clear-up.  In order to answer questions such as:
 * How do we scale?
 * How can we ensure App Service autoscales as expected?
 * Should we add it NGINX and uWSGI workers? 
